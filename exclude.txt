@@ -1,0 +1,13 @@
+*:\System Volume Information
+C:\pagefile.sys
+C:\swapfile.sys
+C:\hiberfil.sys
+C:\Windows
+C:\Windows.old
+C:\Users\*\AppData\Local\Temp
+C:\Users\*\AppData\Local\Microsoft\WindowsApps
+C:\Users\*\iCloudDrive
+C:\ProgramData\Microsoft\Windows
+C:\ProgramData\Microsoft\Windows Defender
+C:\ProgramData\Packages
+C:\Program Files (x86)\Steam

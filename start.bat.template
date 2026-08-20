@@ -1,0 +1,16 @@
+@echo off
+chcp 65001 >NUL
+
+set "AWS_ACCESS_KEY_ID="
+set "AWS_SECRET_ACCESS_KEY="
+set "RESTIC_REPOSITORY=s3:"
+set "RESTIC_PASSWORD="
+set "RESTIC_CACHE_DIR="
+
+if "%~1" == "check" (
+    cd /d C:\
+    python "%~dp0check.py" >> "%~dp0check.log" 2>> "%~dp0check_error.log"
+) else if "%~1" == "backup" (
+    cd /d C:\
+    python "%~dp0backup.py" >> "%~dp0backup.log" 2>> "%~dp0backup_error.log"
+)
