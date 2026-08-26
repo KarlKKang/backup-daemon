@@ -159,13 +159,9 @@ def run_command(
     for t in subprocess_io_threads:
         t.start()
 
-    while True:
-        try:
-            rc = running_subprocess.wait(0.1)
-            break
-        except subprocess.TimeoutExpired:
-            stop_checkpoint()
-            continue
+    while (rc := running_subprocess.poll()) is None:
+        stop.wait(0.1)
+        stop_checkpoint()
     running_subprocess = None
     for t in subprocess_io_threads:
         t.join()
