@@ -136,9 +136,10 @@ def run_command(
     def print_output(pipe, file, output_list):
         try:
             for line in iter(pipe.readline, ""):
-                with print_lock:
-                    log(line, file=file)
-                if output_list is not None:
+                if output_list is None:
+                    with print_lock:
+                        log(line, file=file)
+                else:
                     output_list.append(line)
         finally:
             pipe.close()
@@ -175,6 +176,46 @@ def get_list_item(lst, idx):
         return lst[idx]
     except IndexError:
         return None
+
+
+# --------------------------------------------------------------------------
+# APFS functions
+# --------------------------------------------------------------------------
+
+
+def apfs_snapshot() -> str:
+    stdout = []
+    run_command(["tmutil", "localsnapshot"], stdout=stdout)
+    prefix = "Created local snapshot with date: "
+    for line in stdout:
+        line = line.strip()
+        if line.startswith(prefix):
+            return line[len(prefix) :].strip()
+    raise RuntimeError("Failed to read APFS snapshot from tmutil output")
+
+
+def apfs_mount_snapshot(snapshot_date: str, mount_point: str) -> None:
+    run_command(
+        [
+            "mount_apfs",
+            "-o",
+            "nobrowse,rdonly",
+            "-s",
+            "com.apple.TimeMachine.{}.local".format(snapshot_date),
+            "/System/Volumes/Data",
+            mount_point,
+        ]
+    )
+
+
+def apfs_delete_snapshot(snapshot_date: str) -> None:
+    run_command(
+        [
+            "tmutil",
+            "deletelocalsnapshots",
+            snapshot_date,
+        ]
+    )
 
 
 # --------------------------------------------------------------------------
