@@ -9,6 +9,7 @@ import subprocess
 import traceback
 from datetime import datetime
 import sys
+import platform
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 RUNTIME_DIR = os.path.join(SCRIPT_DIR, "runtime")
@@ -69,7 +70,7 @@ _console_handler = None  # module-level ref so it is not garbage collected
 
 
 def install_windows_console_handler() -> None:
-    if sys.platform != "win32":
+    if platform.system() != "Windows":
         return
 
     HandlerRoutine = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
