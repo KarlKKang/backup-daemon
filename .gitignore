@@ -1,6 +1,7 @@
 /__pycache__/
 /start.bat
 /start.sh
-/check_subset
-/force_run
+/runtime/
 *.log
+/exclude.txt
+/files.txt
