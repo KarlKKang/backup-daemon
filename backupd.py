@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List
+from typing import List, IO
 import os
 import signal
 import threading
@@ -10,9 +10,14 @@ import traceback
 from datetime import datetime
 import sys
 import platform
+import tempfile
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 RUNTIME_DIR = os.path.join(SCRIPT_DIR, "runtime")
+EXCLUDE_LIST = os.path.join(SCRIPT_DIR, "exclude.txt")
+FILE_LIST = os.path.join(SCRIPT_DIR, "files.txt")
+
+DARWIN_SNAPSHOT_MOUNTPOINT = "/tmp/backupd_snapshot"
 
 
 stop = threading.Event()  # set => please shut down
@@ -196,6 +201,7 @@ def apfs_snapshot() -> str:
 
 
 def apfs_mount_snapshot(snapshot_date: str, mount_point: str) -> None:
+    os.makedirs(mount_point, exist_ok=True)
     run_command(
         [
             "mount_apfs",
@@ -233,19 +239,62 @@ def backup():
     current_month = datetime.now().strftime("%Y-%m")
     force_run = current_month != last_force_run
 
-    args = [
-        "restic",
-        "backup",
-        "-q",
-        "--use-fs-snapshot",
-        "--iexclude-file",
-        os.path.join(SCRIPT_DIR, "exclude.txt"),
-    ]
-    if force_run:
-        args.append("--force")
-    args.append("C:")
-    args.append("D:")
-    run_command(args)
+    def copy_file_list(src_path: str, dest_file: IO, prefix: str = "") -> None:
+        with open(src_path, "r", encoding="utf-8") as src:
+            for line in src:
+                line = line.strip()
+                if line.startswith("#"):
+                    continue
+                dest_file.write(f"{prefix}{line}\n")
+
+    def build_backup_command(file_list: str, exclude_list: str) -> list:
+        args = [
+            "restic",
+            "backup",
+            "-q",
+            "--files-from",
+            file_list,
+        ]
+        if platform.system() == "Windows":
+            args.append("--use-fs-snapshot")  # only supported on Windows
+            args.append("--iexclude-file")
+        else:
+            args.append("--exclude-file")
+        args.append(exclude_list)
+        if force_run:
+            args.append("--force")
+        return args
+
+    def run_backup_command(snapshot_dir: str = None) -> None:
+        if snapshot_dir is None:
+            args = build_backup_command(file_list=FILE_LIST, exclude_list=EXCLUDE_LIST)
+            run_command(args)
+        else:
+            with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", delete=True, delete_on_close=False
+            ) as tmp_file_list, tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", delete=True, delete_on_close=False
+            ) as tmp_exclude_list:
+                copy_file_list(FILE_LIST, tmp_file_list, prefix=snapshot_dir)
+                copy_file_list(EXCLUDE_LIST, tmp_exclude_list, prefix=snapshot_dir)
+                tmp_file_list.close()
+                tmp_exclude_list.close()
+                args = build_backup_command(
+                    file_list=tmp_file_list.name,
+                    exclude_list=tmp_exclude_list.name,
+                )
+                run_command(args)
+
+    if platform.system() == "Darwin":
+        snapshot_date = apfs_snapshot()
+        try:
+            apfs_mount_snapshot(snapshot_date, DARWIN_SNAPSHOT_MOUNTPOINT)
+            run_backup_command(snapshot_dir=DARWIN_SNAPSHOT_MOUNTPOINT)
+        finally:
+            # No need to umount, delete will automatically clean up the mount
+            apfs_delete_snapshot(snapshot_date)
+    else:
+        run_backup_command()
 
     if force_run:
         with open(force_run_file, "w") as f:
