@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -e
+
+export AWS_ACCESS_KEY_ID=
+export AWS_SECRET_ACCESS_KEY=
+export RESTIC_REPOSITORY=s3:
+export RESTIC_PASSWORD=
+export RESTIC_CACHE_DIR=
+export RESTIC_HOST=
+
+cd "$(dirname "$0")"
+python backupd.py >> backupd.log 2>> backupd_error.log
