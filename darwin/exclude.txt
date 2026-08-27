@@ -1,0 +1,10 @@
+._*
+.DS_Store
+.AppleDouble
+.Trashes
+.TemporaryItems
+.Spotlight-V100
+/Users/*/.cache
+/Users/*/Library/Caches
+/Users/*/Library/Logs
+/Users/*/Library/Application Support/CrashReporter
