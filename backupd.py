@@ -243,9 +243,10 @@ def backup():
         with open(src_path, "r", encoding="utf-8") as src:
             for line in src:
                 line = line.strip()
-                if line.startswith("#"):
-                    continue
-                dest_file.write(f"{prefix}{line}\n")
+                if line.startswith("/"):
+                    dest_file.write(f"{prefix}{line}\n")
+                else:
+                    dest_file.write(f"{line}\n")
 
     def build_backup_command(file_list: str, exclude_list: str) -> list:
         args = [
