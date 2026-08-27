@@ -253,6 +253,7 @@ def backup():
             "restic",
             "backup",
             "-q",
+            "--no-scan",
             "--files-from",
             file_list,
         ]

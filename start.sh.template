@@ -9,5 +9,7 @@ export RESTIC_PASSWORD=
 export RESTIC_CACHE_DIR=
 export RESTIC_HOST=
 
+export GOMAXPROCS=2
+
 cd "$(dirname "$0")"
 python backupd.py >> backupd.log 2>> backupd_error.log

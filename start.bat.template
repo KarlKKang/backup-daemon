@@ -8,5 +8,7 @@ set "RESTIC_PASSWORD="
 set "RESTIC_CACHE_DIR="
 set "RESTIC_HOST="
 
+set GOMAXPROCS=2
+
 cd /d C:\
 python "%~dp0backupd.py" >> "%~dp0backupd.log" 2>> "%~dp0backupd_error.log"
