@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, IO
+from typing import List, IO, Iterable
 import os
 import signal
 import threading
@@ -174,7 +174,7 @@ def run_command(
         t.join()
     subprocess_io_threads = []
     if rc != 0:
-        raise subprocess.CalledProcessError(rc, running_subprocess.args)
+        raise subprocess.CalledProcessError(rc, command)
 
 
 def get_list_item(lst, idx):
@@ -221,7 +221,8 @@ def apfs_delete_snapshot(snapshot_date: str) -> None:
             "tmutil",
             "deletelocalsnapshots",
             snapshot_date,
-        ]
+        ],
+        stdout=[],
     )
 
 
@@ -239,14 +240,19 @@ def backup():
     current_month = datetime.now().strftime("%Y-%m")
     force_run = current_month != last_force_run
 
+    def write_file_list(src_list: Iterable[str], dest_file: IO, prefix: str = "") -> None:
+        for line in src_list:
+            line = line.strip()
+            if line.startswith("/"):
+                dest_file.write(f"{prefix}{line}\n")
+            elif line.startswith("!/"):
+                dest_file.write(f"{line[1:]}\n")
+            else:
+                dest_file.write(f"{line}\n")
+
     def copy_file_list(src_path: str, dest_file: IO, prefix: str = "") -> None:
         with open(src_path, "r", encoding="utf-8") as src:
-            for line in src:
-                line = line.strip()
-                if line.startswith("/"):
-                    dest_file.write(f"{prefix}{line}\n")
-                else:
-                    dest_file.write(f"{line}\n")
+            write_file_list(src, dest_file, prefix)
 
     def build_backup_command(file_list: str, exclude_list: str) -> list:
         args = [
@@ -254,6 +260,7 @@ def backup():
             "backup",
             "-q",
             "--no-scan",
+            "--exclude-caches",
             "--files-from",
             file_list,
         ]
@@ -268,24 +275,29 @@ def backup():
         return args
 
     def run_backup_command(snapshot_dir: str = None) -> None:
-        if snapshot_dir is None:
-            args = build_backup_command(file_list=FILE_LIST, exclude_list=EXCLUDE_LIST)
-            run_command(args)
-        else:
-            with tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", delete=True, delete_on_close=False
-            ) as tmp_file_list, tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", delete=True, delete_on_close=False
-            ) as tmp_exclude_list:
-                copy_file_list(FILE_LIST, tmp_file_list, prefix=snapshot_dir)
-                copy_file_list(EXCLUDE_LIST, tmp_exclude_list, prefix=snapshot_dir)
-                tmp_file_list.close()
-                tmp_exclude_list.close()
-                args = build_backup_command(
-                    file_list=tmp_file_list.name,
-                    exclude_list=tmp_exclude_list.name,
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", delete=True, delete_on_close=False
+        ) as tmp_file_list, tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", delete=True, delete_on_close=False
+        ) as tmp_exclude_list:
+            copy_file_list(FILE_LIST, tmp_file_list, prefix=snapshot_dir or "")
+            copy_file_list(EXCLUDE_LIST, tmp_exclude_list, prefix=snapshot_dir or "")
+            if platform.system() == "Darwin":
+                timemachine_exclude = []
+                run_command(
+                    ["mdfind", "com_apple_backup_excludeItem = 'com.apple.backupd'"],
+                    stdout=timemachine_exclude,
                 )
-                run_command(args)
+                if snapshot_dir:
+                    write_file_list(timemachine_exclude, tmp_exclude_list, prefix=snapshot_dir)
+                write_file_list(timemachine_exclude, tmp_exclude_list, prefix="")
+            tmp_file_list.close()
+            tmp_exclude_list.close()
+            args = build_backup_command(
+                file_list=tmp_file_list.name,
+                exclude_list=tmp_exclude_list.name,
+            )
+            run_command(args)
 
     if platform.system() == "Darwin":
         snapshot_date = apfs_snapshot()
@@ -316,15 +328,17 @@ def forget():
             "forget",
             "-q",
             "--keep-within",
-            "1d",
-            "--keep-within-hourly",
             "3d",
+            "--keep-within-hourly",
+            "7d",
             "--keep-within-daily",
             "1m",
             "--keep-within-weekly",
             "3m",
             "--keep-within-monthly",
             "1y",
+            "--keep-within-yearly",
+            "3y",
             "--prune",
         ]
     )
@@ -341,6 +355,8 @@ def check():
         return
 
     check_subset_file = os.path.join(RUNTIME_DIR, "check_subset")
+    if not os.path.exists(check_subset_file):
+        open(check_subset_file, "a+").close()
     with open(check_subset_file, "r") as f:
         check_subset = f.readline().strip()
         check_subset = check_subset.split(" ")
@@ -395,7 +411,7 @@ def main() -> int:
         except StopRequested:
             break
         except:
-            print(traceback.format_exc())
+            log(traceback.format_exc(), sys.stderr)
 
     try:
         os.remove(lock_file_path)

@@ -1,1 +1,7 @@
 /Users
+
+# Custom-defined syntax: 
+#  The exclamation mark (!) indicates that the specified path should not be prefixed by the snapshot directory.
+#  This is useful for paths like iCloud documents that must be accessed from the live file system.
+# The following directory contains iCloud documents, including the Desktop and Documents folders if they are stored in iCloud.
+!/Users/*/Library/Mobile Documents

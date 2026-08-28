@@ -12,4 +12,5 @@ export RESTIC_HOST=
 export GOMAXPROCS=2
 
 cd "$(dirname "$0")"
+source ./.venv/bin/activate
 python backupd.py >> backupd.log 2>> backupd_error.log
