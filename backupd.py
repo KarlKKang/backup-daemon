@@ -16,6 +16,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 RUNTIME_DIR = os.path.join(SCRIPT_DIR, "runtime")
 EXCLUDE_LIST = os.path.join(SCRIPT_DIR, "exclude.txt")
 FILE_LIST = os.path.join(SCRIPT_DIR, "files.txt")
+RESTIC_EXEC = os.environ.get("RESTIC_EXEC", None) or "restic"
 
 DARWIN_SNAPSHOT_MOUNTPOINT = "/tmp/backupd_snapshot"
 
@@ -256,7 +257,7 @@ def backup():
 
     def build_backup_command(file_list: str, exclude_list: str) -> list:
         args = [
-            "restic",
+            RESTIC_EXEC,
             "backup",
             "-q",
             "--no-scan",
@@ -324,7 +325,7 @@ def backup():
 def forget():
     run_command(
         [
-            "restic",
+            RESTIC_EXEC,
             "forget",
             "-q",
             "--keep-within",
@@ -366,7 +367,7 @@ def check():
     data_subset = f"{numerator % denominator + 1}/{denominator}"
     run_command(
         [
-            "restic",
+            RESTIC_EXEC,
             "check",
             "-q",
             "--read-data-subset",

@@ -8,6 +8,7 @@ export RESTIC_REPOSITORY=s3:
 export RESTIC_PASSWORD=
 export RESTIC_CACHE_DIR=
 export RESTIC_HOST=
+export RESTIC_EXEC=
 
 export GOMAXPROCS=2
 
