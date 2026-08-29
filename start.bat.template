@@ -12,5 +12,5 @@ set "RESTIC_EXEC="
 set GOMAXPROCS=2
 
 cd /d C:\
-CALL "%~dp0\Scripts\activate.bat"
+CALL "%~dp0\.venv\Scripts\activate.bat"
 python "%~dp0backupd.py" >> "%~dp0backupd.log" 2>> "%~dp0backupd_error.log"
