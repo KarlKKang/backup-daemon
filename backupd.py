@@ -330,7 +330,7 @@ def backup():
     else:
         run_backup_command()
 
-    set_runtime_state("last_backup", current_hour)
+    set_runtime_state("backup", current_hour)
     if force_run:
         set_runtime_state("force_run", current_month)
 
