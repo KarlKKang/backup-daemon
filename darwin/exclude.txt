@@ -6,6 +6,7 @@
 .Spotlight-V100
 /Users/Guest
 /Users/Shared/SC Info
+/Users/*/.Trash
 /Users/*/.cache
 /Users/*/Library/Caches
 /Users/*/Library/Logs
@@ -14,10 +15,13 @@
 # The following directory contains files that cannot be read even by root,
 #  and this directory is somehow not excluded by other means like tagging.
 /Users/*/Library/Group Containers/group.com.apple.CoreSpeech/Caches
+/Users/*/Library/Metadata
+/Users/*/Library/DuetExpertCenter
 
-# The following directories contains iCloud documents.
-#  The iCloud documents cannot be read from snapshots, and must be read directly from the live file system.
+# The following directories contains iCloud documents. The iCloud documents cannot be read from snapshots.
 /Users/*/Library/Mobile Documents
 # If the Desktop and Documents folders are also set to be stored in iCloud:
 /Users/*/Desktop
 /Users/*/Documents
+# If the photo library is stored in iCloud:
+/Users/*/Pictures/Photos Library.photoslibrary

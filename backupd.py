@@ -263,8 +263,6 @@ def backup():
             line = line.strip()
             if line.startswith("/"):
                 dest_file.write(f"{prefix}{line}\n")
-            elif line.startswith("!/"):
-                dest_file.write(f"{line[1:]}\n")
             else:
                 dest_file.write(f"{line}\n")
 
@@ -306,11 +304,9 @@ def backup():
                     ["mdfind", "com_apple_backup_excludeItem = 'com.apple.backupd'"],
                     stdout=timemachine_exclude,
                 )
-                if snapshot_dir:
-                    write_file_list(
-                        timemachine_exclude, tmp_exclude_list, prefix=snapshot_dir
-                    )
-                write_file_list(timemachine_exclude, tmp_exclude_list, prefix="")
+                write_file_list(
+                    timemachine_exclude, tmp_exclude_list, prefix=snapshot_dir or ""
+                )
             tmp_file_list.close()
             tmp_exclude_list.close()
             args = build_backup_command(
