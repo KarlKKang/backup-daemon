@@ -7,8 +7,10 @@ set "RESTIC_REPOSITORY=s3:"
 set "RESTIC_PASSWORD="
 set "RESTIC_CACHE_DIR="
 set "RESTIC_HOST="
+set "RESTIC_EXEC="
 
 set GOMAXPROCS=2
 
 cd /d C:\
+CALL "%~dp0\Scripts\activate.bat"
 python "%~dp0backupd.py" >> "%~dp0backupd.log" 2>> "%~dp0backupd_error.log"
