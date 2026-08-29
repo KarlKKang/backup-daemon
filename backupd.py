@@ -241,7 +241,9 @@ def backup():
     current_month = datetime.now().strftime("%Y-%m")
     force_run = current_month != last_force_run
 
-    def write_file_list(src_list: Iterable[str], dest_file: IO, prefix: str = "") -> None:
+    def write_file_list(
+        src_list: Iterable[str], dest_file: IO, prefix: str = ""
+    ) -> None:
         for line in src_list:
             line = line.strip()
             if line.startswith("/"):
@@ -290,7 +292,9 @@ def backup():
                     stdout=timemachine_exclude,
                 )
                 if snapshot_dir:
-                    write_file_list(timemachine_exclude, tmp_exclude_list, prefix=snapshot_dir)
+                    write_file_list(
+                        timemachine_exclude, tmp_exclude_list, prefix=snapshot_dir
+                    )
                 write_file_list(timemachine_exclude, tmp_exclude_list, prefix="")
             tmp_file_list.close()
             tmp_exclude_list.close()
@@ -385,6 +389,8 @@ def check():
 
 
 def main() -> int:
+    log("Backup daemon started.")
+
     install_signal_handlers()
     install_windows_console_handler()
 
