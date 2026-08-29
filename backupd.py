@@ -185,6 +185,20 @@ def get_list_item(lst, idx):
         return None
 
 
+def get_runtime_state(type: str) -> str:
+    state_file = os.path.join(RUNTIME_DIR, type)
+    if not os.path.exists(state_file):
+        open(state_file, "a+").close()
+    with open(state_file, "r") as f:
+        return f.readline().strip()
+
+
+def set_runtime_state(type: str, value: str) -> None:
+    state_file = os.path.join(RUNTIME_DIR, type)
+    with open(state_file, "w") as f:
+        f.write(value)
+
+
 # --------------------------------------------------------------------------
 # APFS functions
 # --------------------------------------------------------------------------
@@ -233,11 +247,12 @@ def apfs_delete_snapshot(snapshot_date: str) -> None:
 
 
 def backup():
-    force_run_file = os.path.join(RUNTIME_DIR, "force_run")
-    if not os.path.exists(force_run_file):
-        open(force_run_file, "a+").close()
-    with open(force_run_file, "r") as f:
-        last_force_run = f.readline().strip()
+    last_backup = get_runtime_state("backup")
+    current_hour = datetime.now().strftime("%Y-%m-%d-%H")
+    if current_hour == last_backup:
+        return
+
+    last_force_run = get_runtime_state("force_run")
     current_month = datetime.now().strftime("%Y-%m")
     force_run = current_month != last_force_run
 
@@ -315,15 +330,18 @@ def backup():
     else:
         run_backup_command()
 
+    set_runtime_state("last_backup", current_hour)
     if force_run:
-        with open(force_run_file, "w") as f:
-            f.write(current_month)
+        set_runtime_state("force_run", current_month)
 
     log(
         "Restic backup completed successfully{}.".format(
             " (forced run)" if force_run else ""
         )
     )
+
+    stop_checkpoint()
+    forget()
 
 
 def forget():
@@ -350,23 +368,15 @@ def forget():
 
 
 def check():
-    check_file = os.path.join(RUNTIME_DIR, "check")
-    if not os.path.exists(check_file):
-        open(check_file, "a+").close()
-    with open(check_file, "r") as f:
-        last_checked = f.readline().strip()
+    last_checked = get_runtime_state("check")
     current_week = datetime.now().strftime("%G-%V")
     if current_week == last_checked:
         return
 
-    check_subset_file = os.path.join(RUNTIME_DIR, "check_subset")
-    if not os.path.exists(check_subset_file):
-        open(check_subset_file, "a+").close()
-    with open(check_subset_file, "r") as f:
-        check_subset = f.readline().strip()
-        check_subset = check_subset.split(" ")
-        numerator = int(get_list_item(check_subset, 0) or 0)
-        denominator = int(get_list_item(check_subset, 1) or 4)
+    check_subset = get_runtime_state("check_subset")
+    check_subset = check_subset.split(" ")
+    numerator = int(get_list_item(check_subset, 0) or 0)
+    denominator = int(get_list_item(check_subset, 1) or 4)
 
     data_subset = f"{numerator % denominator + 1}/{denominator}"
     run_command(
@@ -379,11 +389,8 @@ def check():
         ]
     )
 
-    with open(check_file, "w") as f:
-        f.write(current_week)
-
-    with open(check_subset_file, "w") as f:
-        f.write(f"{(numerator + 1) % denominator} {denominator}")
+    set_runtime_state("check", current_week)
+    set_runtime_state("check_subset", f"{(numerator + 1) % denominator} {denominator}")
 
     log(f"Restic check completed without errors ({data_subset}).")
 
@@ -406,13 +413,10 @@ def main() -> int:
 
     while True:
         try:
-            # Run every hour.
-            # The first run will happen after 1 hour to allow the system to set up properly after boot.
-            stop.wait(timeout=3600)
+            # The first run will happen after 1 minute to allow the system to set up properly after boot.
+            stop.wait(timeout=60)
             stop_checkpoint()
             backup()
-            stop_checkpoint()
-            forget()
             stop_checkpoint()
             check()
         except StopRequested:
