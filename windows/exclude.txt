@@ -9,5 +9,6 @@ C:\Users\*\AppData\Local\Microsoft\WindowsApps
 C:\Users\*\iCloudDrive
 C:\ProgramData\Microsoft\Windows
 C:\ProgramData\Microsoft\Windows Defender
+C:\ProgramData\Microsoft\Crypto
 C:\ProgramData\Packages
 C:\Program Files (x86)\Steam
