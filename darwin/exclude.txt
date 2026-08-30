@@ -17,6 +17,8 @@
 /Users/*/Library/Group Containers/group.com.apple.CoreSpeech/Caches
 /Users/*/Library/Metadata
 /Users/*/Library/DuetExpertCenter
+/Users/*/Library/Containers/com.apple.Maps
+/Users/*/Library/Containers/com.apple.findmy.FindMyWidgetItems
 
 # The following directories contains iCloud documents. The iCloud documents cannot be read from snapshots.
 /Users/*/Library/Mobile Documents
