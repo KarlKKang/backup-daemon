@@ -61,8 +61,22 @@ def install_signal_handlers() -> None:
 
 
 # --------------------------------------------------------------------------
-# Windows console control events
+# Windows: console control events
 # --------------------------------------------------------------------------
+#
+# This path reliably delivers CTRL_CLOSE_EVENT (the window's X button) only.
+# CTRL_LOGOFF_EVENT / CTRL_SHUTDOWN_EVENT will NOT arrive here for the
+# following reasons:
+#
+#   1. Those two are only sent to services. Interactive console programs are
+#      already terminated by the time the system sends them.
+#   2. Once a process loads user32.dll or gdi32.dll, Windows classifies it as
+#      a GUI app and stops routing logoff/shutdown to its console handler at
+#      all -- which is exactly what happens below, since the session-end
+#      window pulls in user32.
+#
+# They are still listed so the code behaves correctly if it is ever hosted as
+# a Windows service, where those events do fire.
 
 _WIN_EVENTS = {
     0: "CTRL_C_EVENT",
@@ -73,6 +87,15 @@ _WIN_EVENTS = {
 }
 
 _console_handler = None  # module-level ref so it is not garbage collected
+
+
+def windows_cleanup_wait() -> None:
+    if not cleanup_done.wait(4.0):
+        log(
+            "Cleanup is taking longer than expected, may be terminated by the OS.",
+            file=sys.stderr,
+        )
+        cleanup_done.wait()
 
 
 def install_windows_console_handler() -> None:
@@ -88,12 +111,7 @@ def install_windows_console_handler() -> None:
         request_stop(_WIN_EVENTS.get(event, f"CTRL_EVENT_{event}"))
         # Windows terminates the process the moment this returns, so block
         # here until the main thread has finished cleaning up.
-        if not cleanup_done.wait(4.0):
-            log(
-                "Cleanup is taking longer than expected, may be terminated by the OS.",
-                file=sys.stderr,
-            )
-            cleanup_done.wait()
+        windows_cleanup_wait()
         return 1  # handled
 
     global _console_handler
@@ -101,6 +119,169 @@ def install_windows_console_handler() -> None:
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     if not kernel32.SetConsoleCtrlHandler(_console_handler, True):
         raise ctypes.WinError(ctypes.get_last_error())
+
+
+# --------------------------------------------------------------------------
+# Windows: logoff / system shutdown, via a hidden top-level window
+# --------------------------------------------------------------------------
+#
+# The supported notification for an interactive process is the
+# WM_QUERYENDSESSION / WM_ENDSESSION pair, which requires a window. We create
+# one and never show it.
+#
+# It must be a real top-level window, NOT a message-only (HWND_MESSAGE) one:
+# message-only windows are treated as children of a hidden parent and are
+# therefore skipped by broadcasts, including WM_QUERYENDSESSION.
+
+WM_DESTROY = 0x0002
+WM_CLOSE = 0x0010
+WM_QUERYENDSESSION = 0x0011
+WM_ENDSESSION = 0x0016
+
+ENDSESSION_CLOSEAPP = 0x00000001
+ENDSESSION_CRITICAL = 0x40000000
+ENDSESSION_LOGOFF = 0x80000000
+
+ERROR_CLASS_ALREADY_EXISTS = 1410
+WINDOW_CLASS = "GracefulShutdownSessionEndSink"
+
+
+def install_windows_session_end_handler(timeout: float = 5.0):
+    """Start the hidden-window message pump. Returns True once it is live."""
+    if platform.system() != "Windows":
+        return
+    ready = threading.Event()
+    threading.Thread(
+        target=_session_end_pump,
+        args=(ready,),
+        name="win32-session-end",
+        daemon=True,
+    ).start()
+    if not ready.wait(timeout):
+        raise TimeoutError("Windows session end handler did not become ready in time.")
+
+
+def _session_end_pump(ready: threading.Event) -> None:
+    import ctypes.wintypes as w  # importable on Windows only
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    LRESULT = ctypes.c_ssize_t
+    WNDPROC = ctypes.WINFUNCTYPE(LRESULT, w.HWND, ctypes.c_uint, w.WPARAM, w.LPARAM)
+
+    class WNDCLASSW(ctypes.Structure):
+        _fields_ = [
+            ("style", ctypes.c_uint),
+            ("lpfnWndProc", WNDPROC),
+            ("cbClsExtra", ctypes.c_int),
+            ("cbWndExtra", ctypes.c_int),
+            ("hInstance", w.HINSTANCE),
+            ("hIcon", w.HICON),
+            ("hCursor", w.HCURSOR),
+            ("hbrBackground", w.HBRUSH),
+            ("lpszMenuName", w.LPCWSTR),
+            ("lpszClassName", w.LPCWSTR),
+        ]
+
+    # Explicit signatures: without these, 64-bit handles get truncated to int.
+    user32.DefWindowProcW.restype = LRESULT
+    user32.DefWindowProcW.argtypes = [w.HWND, ctypes.c_uint, w.WPARAM, w.LPARAM]
+    user32.RegisterClassW.restype = w.ATOM
+    user32.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASSW)]
+    user32.CreateWindowExW.restype = w.HWND
+    user32.CreateWindowExW.argtypes = [
+        w.DWORD,
+        w.LPCWSTR,
+        w.LPCWSTR,
+        w.DWORD,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        w.HWND,
+        w.HMENU,
+        w.HINSTANCE,
+        w.LPVOID,
+    ]
+    user32.GetMessageW.argtypes = [
+        ctypes.POINTER(w.MSG),
+        w.HWND,
+        ctypes.c_uint,
+        ctypes.c_uint,
+    ]
+    user32.DestroyWindow.argtypes = [w.HWND]
+    kernel32.GetModuleHandleW.restype = w.HMODULE
+    kernel32.GetModuleHandleW.argtypes = [w.LPCWSTR]
+
+    def wndproc(hwnd, msg, wparam, lparam):
+        if msg == WM_QUERYENDSESSION:
+            kind = "logoff" if lparam & ENDSESSION_LOGOFF else "shutdown"
+            if lparam & ENDSESSION_CRITICAL:
+                kind += ", critical"
+            # Windows wants an immediate answer here, so just wake the loop.
+            # Cleanup overlaps the rest of the session-end handshake, which
+            # buys us most of the grace period. If the shutdown is later
+            # cancelled we exit anyway -- a better outcome than being killed
+            # mid-write, and the script can simply be restarted.
+            request_stop(f"WM_QUERYENDSESSION ({kind})")
+            return 1  # TRUE: we consent to the session ending
+        if msg == WM_ENDSESSION:
+            if wparam:  # the session really is ending
+                # The system waits for us to return from this message,
+                # subject to HungAppTimeout (~5 s).
+                windows_cleanup_wait()
+            return 0
+        if msg == WM_CLOSE:
+            user32.DestroyWindow(hwnd)
+            return 0
+        if msg == WM_DESTROY:
+            user32.PostQuitMessage(0)
+            return 0
+        return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+    # Locals below stay alive because this frame lives as long as the thread;
+    # that keeps the WNDPROC callback and class-name buffer from being freed.
+    wc = WNDCLASSW()
+    wc.lpfnWndProc = WNDPROC(wndproc)
+    wc.hInstance = kernel32.GetModuleHandleW(None)
+    wc.lpszClassName = WINDOW_CLASS
+
+    if not user32.RegisterClassW(ctypes.byref(wc)):
+        err = ctypes.get_last_error()
+        if err != ERROR_CLASS_ALREADY_EXISTS:
+            ready.set()
+            raise ctypes.WinError(err)
+
+    hwnd = user32.CreateWindowExW(
+        0,
+        WINDOW_CLASS,
+        "graceful-shutdown",
+        0,
+        0,
+        0,
+        0,
+        0,
+        None,
+        None,
+        wc.hInstance,
+        None,
+    )
+    if not hwnd:
+        ready.set()
+        raise ctypes.WinError(ctypes.get_last_error())
+    # Never call ShowWindow: the window stays invisible but is still top-level.
+
+    # Be notified early in the shutdown sequence (0x100-0x3FF is the app
+    # range; the default is 0x280 and higher values are notified sooner).
+    kernel32.SetProcessShutdownParameters(0x3FF, 0)
+
+    ready.set()
+
+    msg = w.MSG()
+    while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+        user32.TranslateMessage(ctypes.byref(msg))
+        user32.DispatchMessageW(ctypes.byref(msg))
 
 
 # --------------------------------------------------------------------------
@@ -399,6 +580,7 @@ def main() -> int:
 
     install_signal_handlers()
     install_windows_console_handler()
+    install_windows_session_end_handler()
 
     os.makedirs(RUNTIME_DIR, exist_ok=True)
     lock_file_path = os.path.join(RUNTIME_DIR, "lock")
@@ -433,6 +615,11 @@ def main() -> int:
         t.join()
     cleanup_done.set()
 
+    # Let a blocked WM_ENDSESSION / console handler observe the flag
+    # before the interpreter tears down and freezes daemon threads.
+    time.sleep(0.05)
+
+    log("Backup daemon exiting.")
     return 0
 
 
