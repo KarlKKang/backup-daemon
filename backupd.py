@@ -155,7 +155,6 @@ def install_windows_session_end_handler(timeout: float = 5.0):
         target=_session_end_pump,
         args=(ready,),
         name="win32-session-end",
-        daemon=True,
     ).start()
     if not ready.wait(timeout):
         raise TimeoutError("Windows session end handler did not become ready in time.")
@@ -340,12 +339,10 @@ def run_command(
         threading.Thread(
             target=print_output,
             args=(running_subprocess.stdout, sys.stdout, stdout),
-            daemon=True,
         ),
         threading.Thread(
             target=print_output,
             args=(running_subprocess.stderr, sys.stderr, stderr),
-            daemon=True,
         ),
     ]
     for t in subprocess_io_threads:
@@ -575,7 +572,7 @@ def check():
     log(f"Restic check completed without errors ({data_subset}).")
 
 
-def main() -> int:
+def main():
     log("Backup daemon started.")
 
     install_signal_handlers()
@@ -590,7 +587,7 @@ def main() -> int:
     except FileExistsError:
         log("Another instance is already running.", sys.stderr)
         cleanup_done.set()
-        return 1
+        sys.exit(1)
 
     while True:
         try:
@@ -615,13 +612,8 @@ def main() -> int:
         t.join()
     cleanup_done.set()
 
-    # Let a blocked WM_ENDSESSION / console handler observe the flag
-    # before the interpreter tears down and freezes daemon threads.
-    time.sleep(0.05)
-
     log("Backup daemon exiting.")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
