@@ -89,7 +89,10 @@ def install_windows_console_handler() -> None:
         # Windows terminates the process the moment this returns, so block
         # here until the main thread has finished cleaning up.
         if not cleanup_done.wait(4.0):
-            log("Cleanup is taking longer than expected, may be terminated by the OS.")
+            log(
+                "Cleanup is taking longer than expected, may be terminated by the OS.",
+                file=sys.stderr,
+            )
             cleanup_done.wait()
         return 1  # handled
 
