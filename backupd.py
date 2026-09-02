@@ -718,9 +718,8 @@ def main():
         running_subprocess.wait()
     for t in subprocess_io_threads:
         t.join()
-    cleanup_done.set()
-
     log("Backup daemon exiting.")
+    cleanup_done.set()
 
     # Let a blocked WM_ENDSESSION / console handler observe the flag
     # before the interpreter tears down and freezes daemon threads.
