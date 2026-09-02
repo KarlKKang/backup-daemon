@@ -284,6 +284,85 @@ def _session_end_pump(ready: threading.Event) -> None:
 
 
 # --------------------------------------------------------------------------
+# is_process_running
+# --------------------------------------------------------------------------
+
+
+class PidCheckError(RuntimeError):
+    """Raised when the state of a PID could not be determined."""
+
+
+def _running_posix(pid: int) -> bool:
+    """Linux/macOS: signal 0 runs the permission and existence checks only."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False  # ESRCH -- no such process
+    except PermissionError:
+        return True  # EPERM -- it exists, we are just not allowed to signal it
+    except OSError as exc:
+        raise PidCheckError(f"os.kill({pid}, 0) failed: {exc}") from exc
+    return True
+
+
+def _running_windows(pid: int) -> bool:
+    """Windows: open a handle to the process and read its exit code."""
+    from ctypes import wintypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    ERROR_ACCESS_DENIED = 5
+    ERROR_INVALID_PARAMETER = 87
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    # Declaring the signatures matters: without an explicit restype ctypes
+    # assumes int and truncates the 64-bit handle.
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, wintypes.LPDWORD)
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        err = ctypes.get_last_error()
+        if err == ERROR_INVALID_PARAMETER:
+            return False  # no process carries that id
+        if err == ERROR_ACCESS_DENIED:
+            return True  # it exists, the handle just cannot be opened
+        raise PidCheckError(f"OpenProcess failed with error {err}")
+
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            err = ctypes.get_last_error()
+            raise PidCheckError(f"GetExitCodeProcess failed with error {err}")
+        return code.value == STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def is_process_running(pid: int) -> bool:
+    """Return True if a process with this PID exists right now.
+
+    Raises ValueError for a non-positive PID and PidCheckError if the state
+    genuinely could not be determined.
+    """
+    if not isinstance(pid, int) or isinstance(pid, bool):
+        raise ValueError("pid must be an int")
+    if pid <= 0:
+        # 0 and negatives are not real PIDs: on POSIX, kill(0, ...) targets the
+        # caller's whole process group and kill(-n, ...) targets group n.
+        raise ValueError(f"pid must be a positive integer, got {pid}")
+
+    if platform.system() == "Windows":
+        return _running_windows(pid)
+    return _running_posix(pid)
+
+
+# --------------------------------------------------------------------------
 # Helper functions
 # --------------------------------------------------------------------------
 
@@ -572,6 +651,37 @@ def check():
     log(f"Restic check completed without errors ({data_subset}).")
 
 
+def lock_process(lock_file_path):
+    try:
+        with open(lock_file_path, "x") as lock_file:
+            lock_file.write(str(os.getpid()))
+    except FileExistsError:
+        with open(lock_file_path, "r") as lock_file:
+            running_pid = lock_file.read().strip()
+        try:
+            running = is_process_running(int(running_pid))
+        except ValueError:
+            running = False
+            log(f"The lock file contains an invalid PID ({running_pid}).", sys.stderr)
+        except PidCheckError as e:
+            # Assume the process is running if we cannot check its status
+            running = True
+            log(
+                f"Failed to check if the process with PID {running_pid} is running: {e}",
+                sys.stderr,
+            )
+        if running:
+            log("Another instance is already running.", sys.stderr)
+            cleanup_done.set()
+            sys.exit(1)
+        log(
+            "Lock file exists but no running process found, removing the lock file.",
+            sys.stderr,
+        )
+        os.remove(lock_file_path)
+        lock_process(lock_file_path)
+
+
 def main():
     log("Backup daemon started.")
 
@@ -581,13 +691,7 @@ def main():
 
     os.makedirs(RUNTIME_DIR, exist_ok=True)
     lock_file_path = os.path.join(RUNTIME_DIR, "lock")
-    try:
-        with open(lock_file_path, "x") as lock_file:
-            lock_file.write(str(os.getpid()))
-    except FileExistsError:
-        log("Another instance is already running.", sys.stderr)
-        cleanup_done.set()
-        sys.exit(1)
+    lock_process(lock_file_path)
 
     while True:
         try:
