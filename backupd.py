@@ -687,8 +687,6 @@ def lock_process(lock_file_path):
 
 
 def main():
-    log("Backup daemon started.")
-
     install_signal_handlers()
     install_windows_console_handler()
     install_windows_session_end_handler()
@@ -696,6 +694,8 @@ def main():
     os.makedirs(RUNTIME_DIR, exist_ok=True)
     lock_file_path = os.path.join(RUNTIME_DIR, "lock")
     lock_process(lock_file_path)
+
+    log("Backup daemon started.")
 
     while True:
         try:
