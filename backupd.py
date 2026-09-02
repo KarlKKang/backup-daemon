@@ -20,6 +20,9 @@ RESTIC_EXEC = os.environ.get("RESTIC_EXEC", None) or "restic"
 
 DARWIN_SNAPSHOT_MOUNTPOINT = "/tmp/backupd_snapshot"
 
+IS_WINDOWS = platform.system() == "Windows"
+IS_DARWIN = platform.system() == "Darwin"
+
 
 stop = threading.Event()  # set => please shut down
 cleanup_done = threading.Event()  # set => cleanup finished
@@ -99,7 +102,7 @@ def windows_cleanup_wait() -> None:
 
 
 def install_windows_console_handler() -> None:
-    if platform.system() != "Windows":
+    if not IS_WINDOWS:
         return
 
     HandlerRoutine = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
@@ -148,7 +151,7 @@ WINDOW_CLASS = "GracefulShutdownSessionEndSink"
 
 def install_windows_session_end_handler(timeout: float = 5.0):
     """Start the hidden-window message pump. Returns True once it is live."""
-    if platform.system() != "Windows":
+    if not IS_WINDOWS:
         return
     ready = threading.Event()
     threading.Thread(
@@ -357,7 +360,7 @@ def is_process_running(pid: int) -> bool:
         # caller's whole process group and kill(-n, ...) targets group n.
         raise ValueError(f"pid must be a positive integer, got {pid}")
 
-    if platform.system() == "Windows":
+    if IS_WINDOWS:
         return _running_windows(pid)
     return _running_posix(pid)
 
@@ -540,7 +543,7 @@ def backup():
             "--files-from",
             file_list,
         ]
-        if platform.system() == "Windows":
+        if IS_WINDOWS:
             args.append("--use-fs-snapshot")  # only supported on Windows
             args.append("--iexclude-file")
         else:
@@ -558,7 +561,7 @@ def backup():
         ) as tmp_exclude_list:
             copy_file_list(FILE_LIST, tmp_file_list, prefix=snapshot_dir or "")
             copy_file_list(EXCLUDE_LIST, tmp_exclude_list, prefix=snapshot_dir or "")
-            if platform.system() == "Darwin":
+            if IS_DARWIN:
                 timemachine_exclude = []
                 run_command(
                     ["mdfind", "com_apple_backup_excludeItem = 'com.apple.backupd'"],
@@ -575,7 +578,7 @@ def backup():
             )
             run_command(args)
 
-    if platform.system() == "Darwin":
+    if IS_DARWIN:
         snapshot_date = apfs_snapshot()
         try:
             apfs_mount_snapshot(snapshot_date, DARWIN_SNAPSHOT_MOUNTPOINT)
