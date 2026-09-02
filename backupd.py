@@ -158,6 +158,7 @@ def install_windows_session_end_handler(timeout: float = 5.0):
         target=_session_end_pump,
         args=(ready,),
         name="win32-session-end",
+        daemon=True,
     ).start()
     if not ready.wait(timeout):
         raise TimeoutError("Windows session end handler did not become ready in time.")
@@ -720,6 +721,10 @@ def main():
     cleanup_done.set()
 
     log("Backup daemon exiting.")
+
+    # Let a blocked WM_ENDSESSION / console handler observe the flag
+    # before the interpreter tears down and freezes daemon threads.
+    time.sleep(0.05)
 
 
 if __name__ == "__main__":
