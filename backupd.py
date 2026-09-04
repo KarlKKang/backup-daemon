@@ -26,12 +26,15 @@ IS_DARWIN = platform.system() == "Darwin"
 
 stop = threading.Event()  # set => please shut down
 cleanup_done = threading.Event()  # set => cleanup finished
+stop_reason = "<not set>"
 
 
 def request_stop(reason: str) -> None:
     """Idempotent shutdown request. Safe to call from any thread."""
     if not stop.is_set():
-        log(f"Shutdown requested: {reason}", file=sys.stderr)
+        # print the reason in main program flow, to avoid re-entrancy issues
+        global stop_reason
+        stop_reason = reason
     stop.set()
 
 
@@ -41,10 +44,6 @@ def request_stop(reason: str) -> None:
 
 
 def _on_signal(signum, _frame) -> None:
-    if stop.is_set():
-        # Second signal: the user is impatient, or cleanup is wedged.
-        log("Second signal received - exiting immediately.", file=sys.stderr)
-        os._exit(128 + signum)
     request_stop(signal.Signals(signum).name)
 
 
@@ -94,6 +93,7 @@ _console_handler = None  # module-level ref so it is not garbage collected
 
 def windows_cleanup_wait() -> None:
     if not cleanup_done.wait(4.0):
+        # On Windows it's safe to do buffered print, since HandlerRoutine are run in a separate thread.
         log(
             "Cleanup is taking longer than expected, may be terminated by the OS.",
             file=sys.stderr,
@@ -374,7 +374,10 @@ def is_process_running(pid: int) -> bool:
 def log(message: str, file=None) -> None:
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     for line in message.splitlines():
-        print(f"[{timestamp}] {line}", file=file or sys.stdout, flush=True)
+        try:
+            print(f"[{timestamp}] {line}", file=file or sys.stdout, flush=True)
+        except Exception:
+            pass
 
 
 class StopRequested(Exception):
@@ -755,7 +758,7 @@ def main():
         running_subprocess.wait()
     for t in subprocess_io_threads:
         t.join()
-    log("Backup daemon exiting.")
+    log(f"Backup daemon exiting. {stop_reason} received.")
     cleanup_done.set()
 
     # Let a blocked WM_ENDSESSION / console handler observe the flag
