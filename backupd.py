@@ -395,6 +395,26 @@ subprocess_io_threads = []
 def run_command(
     command: List[str], stdout: List[str] = None, stderr: List[str] = None
 ) -> None:
+    kwargs = {}
+    if IS_WINDOWS:
+        # NOTE: a Windows process group is only a TARGETING mechanism for
+        # GenerateConsoleCtrlEvent -- unlike a POSIX foreground process group,
+        # it does not filter delivery. Keyboard events still go to every
+        # process attached to the console. What this flag actually buys:
+        #   * pid becomes a group id that CTRL_BREAK_EVENT can target
+        #   * an implicit SetConsoleCtrlHandler(NULL, TRUE), whose only effect
+        #     is that Ctrl+C handlers are not invoked. The event is still
+        #     delivered; the child could re-enable it with (NULL, FALSE).
+        # Ctrl+BREAK has no such opt-out and ALWAYS invokes handlers, and
+        # CTRL_CLOSE_EVENT still fans out too. So a console-sharing child has
+        # two unavoidable extra delivery paths.
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        # setsid(): new session, new process group, no controlling terminal.
+        # Terminal-generated SIGINT/SIGQUIT/SIGHUP can no longer reach it.
+        # Being a group leader also lets killpg() sweep up its descendants.
+        kwargs["start_new_session"] = True
+
     global running_subprocess
     running_subprocess = subprocess.Popen(
         command,
@@ -402,6 +422,7 @@ def run_command(
         stderr=subprocess.PIPE,
         encoding="utf-8",
         errors="replace",
+        **kwargs,
     )
 
     print_lock = threading.Lock()
@@ -432,14 +453,30 @@ def run_command(
         t.start()
 
     while (rc := running_subprocess.poll()) is None:
+        if stop.is_set():
+            # this will send a second termination signal for broadcasted signals (mostly relevant on Windows)
+            killpg(running_subprocess)
+            raise StopRequested()
         stop.wait(0.1)
-        stop_checkpoint()
     running_subprocess = None
     for t in subprocess_io_threads:
         t.join()
     subprocess_io_threads = []
     if rc != 0:
         raise subprocess.CalledProcessError(rc, command)
+
+
+def killpg(p: subprocess.Popen):
+    try:
+        if IS_WINDOWS:
+            # Works because the child was created with CREATE_NEW_PROCESS_GROUP
+            # (pid == process group id) and still shares our console.
+            # CTRL_C_EVENT would silently no-op against a specific group.
+            os.kill(p.pid, signal.CTRL_BREAK_EVENT)
+        else:
+            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+    except OSError:
+        pass
 
 
 def get_list_item(lst, idx):
