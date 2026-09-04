@@ -733,37 +733,36 @@ def main():
 
     os.makedirs(RUNTIME_DIR, exist_ok=True)
     lock_file_path = os.path.join(RUNTIME_DIR, "lock")
-    lock_process(lock_file_path)
 
-    log("Backup daemon started.")
-
-    while True:
-        try:
+    try:
+        lock_process(lock_file_path)
+        log("Backup daemon started.")
+        while True:
             # The first run will happen after 1 minute to allow the system to set up properly after boot.
             stop.wait(timeout=60)
             stop_checkpoint()
             backup()
             stop_checkpoint()
             check()
-        except StopRequested:
-            break
-        except:
-            log(traceback.format_exc(), sys.stderr)
-
-    try:
-        os.remove(lock_file_path)
-    except:
+    except StopRequested:
         pass
-    if running_subprocess is not None:
-        running_subprocess.wait()
-    for t in subprocess_io_threads:
-        t.join()
-    log(f"Backup daemon exiting. {stop_reason} received.")
-    cleanup_done.set()
+    except:
+        log(traceback.format_exc(), sys.stderr)
+    finally:
+        try:
+            os.remove(lock_file_path)
+        except:
+            pass
+        if running_subprocess is not None:
+            running_subprocess.wait()
+        for t in subprocess_io_threads:
+            t.join()
+        log(f"Backup daemon exiting. {stop_reason} received.")
+        cleanup_done.set()
 
-    # Let a blocked WM_ENDSESSION / console handler observe the flag
-    # before the interpreter tears down and freezes daemon threads.
-    time.sleep(0.05)
+        # Let a blocked WM_ENDSESSION / console handler observe the flag
+        # before the interpreter tears down and freezes daemon threads.
+        time.sleep(0.05)
 
 
 if __name__ == "__main__":
