@@ -6,12 +6,12 @@ from datetime import datetime
 import sys
 import tempfile
 from enum import Enum
-from .internal.log import log
-from .internal.is_process_running import is_process_running, PidCheckError
-from .internal.platform import IS_WINDOWS, IS_DARWIN
-from .internal import signal
-from .internal import subprocess
-from .internal import apfs
+from internal.log import log
+from internal.is_process_running import is_process_running, PidCheckError
+from internal.platform import IS_WINDOWS, IS_DARWIN
+from internal import signal
+from internal import subprocess
+from internal import apfs
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 RUNTIME_DIR = os.path.join(SCRIPT_DIR, "runtime")
