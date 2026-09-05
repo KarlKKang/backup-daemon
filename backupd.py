@@ -5,6 +5,7 @@ import traceback
 from datetime import datetime
 import sys
 import tempfile
+from enum import Enum
 from .internal.log import log
 from .internal.is_process_running import is_process_running, PidCheckError
 from .internal.platform import IS_WINDOWS, IS_DARWIN
@@ -28,27 +29,34 @@ def get_list_item[T](lst: list[T], idx: int) -> T | None:
         return None
 
 
-def get_runtime_state(type: str) -> str:
-    state_file = os.path.join(RUNTIME_DIR, type)
+class RuntimeState(Enum):
+    BACKUP = "backup"
+    FORCE_RUN = "force_run"
+    CHECK = "check"
+    CHECK_SUBSET = "check_subset"
+
+
+def get_runtime_state(type: RuntimeState) -> str:
+    state_file = os.path.join(RUNTIME_DIR, type.value)
     if not os.path.exists(state_file):
         open(state_file, "a+").close()
     with open(state_file, "r") as f:
         return f.readline().strip()
 
 
-def set_runtime_state(type: str, value: str) -> None:
-    state_file = os.path.join(RUNTIME_DIR, type)
+def set_runtime_state(type: RuntimeState, value: str) -> None:
+    state_file = os.path.join(RUNTIME_DIR, type.value)
     with open(state_file, "w") as f:
         f.write(value)
 
 
 def run_backup() -> bool:
-    last_backup = get_runtime_state("backup")
+    last_backup = get_runtime_state(RuntimeState.BACKUP)
     current_hour = datetime.now().strftime("%Y-%m-%d-%H")
     if current_hour == last_backup:
         return False
 
-    last_force_run = get_runtime_state("force_run")
+    last_force_run = get_runtime_state(RuntimeState.FORCE_RUN)
     current_month = datetime.now().strftime("%Y-%m")
     force_run = current_month != last_force_run
 
@@ -125,9 +133,9 @@ def run_backup() -> bool:
     else:
         run_restic_command()
 
-    set_runtime_state("backup", current_hour)
+    set_runtime_state(RuntimeState.BACKUP, current_hour)
     if force_run:
-        set_runtime_state("force_run", current_month)
+        set_runtime_state(RuntimeState.FORCE_RUN, current_month)
 
     log(
         "Restic backup completed successfully{}.".format(
@@ -161,12 +169,12 @@ def run_forget() -> None:
 
 
 def run_check() -> bool:
-    last_checked = get_runtime_state("check")
+    last_checked = get_runtime_state(RuntimeState.CHECK)
     current_week = datetime.now().strftime("%G-%V")
     if current_week == last_checked:
         return False
 
-    check_subset = get_runtime_state("check_subset")
+    check_subset = get_runtime_state(RuntimeState.CHECK_SUBSET)
     check_subset = check_subset.split(" ")
     numerator = int(get_list_item(check_subset, 0) or 0)
     denominator = int(get_list_item(check_subset, 1) or 4)
@@ -182,8 +190,10 @@ def run_check() -> bool:
         ]
     )
 
-    set_runtime_state("check", current_week)
-    set_runtime_state("check_subset", f"{(numerator + 1) % denominator} {denominator}")
+    set_runtime_state(RuntimeState.CHECK, current_week)
+    set_runtime_state(
+        RuntimeState.CHECK_SUBSET, f"{(numerator + 1) % denominator} {denominator}"
+    )
 
     log(f"Restic check completed without errors ({data_subset}).")
     return True
