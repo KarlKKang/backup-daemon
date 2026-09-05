@@ -11,8 +11,8 @@ __all__ = [
     "uninterruptible_wait",
 ]
 
-running_subprocess = None
-subprocess_io_threads = []
+_running_subprocess = None
+_subprocess_io_threads = []
 
 
 def run_command(
@@ -38,8 +38,8 @@ def run_command(
         # Being a group leader also lets killpg() sweep up its descendants.
         kwargs["start_new_session"] = True
 
-    global running_subprocess
-    running_subprocess = subprocess.Popen(
+    global _running_subprocess
+    _running_subprocess = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -61,35 +61,35 @@ def run_command(
         finally:
             pipe.close()
 
-    global subprocess_io_threads
-    subprocess_io_threads = [
+    global _subprocess_io_threads
+    _subprocess_io_threads = [
         threading.Thread(
             target=print_output,
-            args=(running_subprocess.stdout, sys.stdout, stdout),
+            args=(_running_subprocess.stdout, sys.stdout, stdout),
         ),
         threading.Thread(
             target=print_output,
-            args=(running_subprocess.stderr, sys.stderr, stderr),
+            args=(_running_subprocess.stderr, sys.stderr, stderr),
         ),
     ]
-    for t in subprocess_io_threads:
+    for t in _subprocess_io_threads:
         t.start()
 
-    while (rc := running_subprocess.poll()) is None:
+    while (rc := _running_subprocess.poll()) is None:
         if signal.stop.is_set():
             # this will send a second termination signal for broadcasted signals (mostly relevant on Windows)
-            killpg(running_subprocess)
+            _killpg(_running_subprocess)
             raise signal.StopRequested()
         signal.stop.wait(0.1)
-    running_subprocess = None
-    for t in subprocess_io_threads:
+    _running_subprocess = None
+    for t in _subprocess_io_threads:
         t.join()
-    subprocess_io_threads = []
+    _subprocess_io_threads = []
     if rc != 0:
         raise subprocess.CalledProcessError(rc, command)
 
 
-def killpg(p: subprocess.Popen) -> None:
+def _killpg(p: subprocess.Popen) -> None:
     try:
         if IS_WINDOWS:
             # Works because the child was created with CREATE_NEW_PROCESS_GROUP
@@ -103,10 +103,11 @@ def killpg(p: subprocess.Popen) -> None:
 
 
 def uninterruptible_wait() -> None:
-    global running_subprocess
-    if running_subprocess is not None:
-        running_subprocess.wait()
-    running_subprocess = None
-    for t in subprocess_io_threads:
+    global _running_subprocess
+    if _running_subprocess is not None:
+        _running_subprocess.wait()
+    _running_subprocess = None
+    global _subprocess_io_threads
+    for t in _subprocess_io_threads:
         t.join()
-    subprocess_io_threads = []
+    _subprocess_io_threads = []

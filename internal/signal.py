@@ -94,7 +94,7 @@ _WIN_EVENTS = {
 _console_handler = None  # module-level ref so it is not garbage collected
 
 
-def windows_cleanup_wait() -> None:
+def _windows_cleanup_wait() -> None:
     if not cleanup_done.wait(4.0):
         # On Windows it's safe to do buffered print, since HandlerRoutine are run in a separate thread.
         log(
@@ -117,7 +117,7 @@ def install_windows_console_handler() -> None:
         request_stop(_WIN_EVENTS.get(event, f"CTRL_EVENT_{event}"))
         # Windows terminates the process the moment this returns, so block
         # here until the main thread has finished cleaning up.
-        windows_cleanup_wait()
+        _windows_cleanup_wait()
         return 1  # handled
 
     global _console_handler
@@ -139,17 +139,17 @@ def install_windows_console_handler() -> None:
 # message-only windows are treated as children of a hidden parent and are
 # therefore skipped by broadcasts, including WM_QUERYENDSESSION.
 
-WM_DESTROY = 0x0002
-WM_CLOSE = 0x0010
-WM_QUERYENDSESSION = 0x0011
-WM_ENDSESSION = 0x0016
+_WM_DESTROY = 0x0002
+_WM_CLOSE = 0x0010
+_WM_QUERYENDSESSION = 0x0011
+_WM_ENDSESSION = 0x0016
 
-ENDSESSION_CLOSEAPP = 0x00000001
-ENDSESSION_CRITICAL = 0x40000000
-ENDSESSION_LOGOFF = 0x80000000
+_ENDSESSION_CLOSEAPP = 0x00000001
+_ENDSESSION_CRITICAL = 0x40000000
+_ENDSESSION_LOGOFF = 0x80000000
 
-ERROR_CLASS_ALREADY_EXISTS = 1410
-WINDOW_CLASS = "GracefulShutdownSessionEndSink"
+_ERROR_CLASS_ALREADY_EXISTS = 1410
+_WINDOW_CLASS = "GracefulShutdownSessionEndSink"
 
 
 def install_windows_session_end_handler(timeout: float = 5.0):
@@ -221,9 +221,9 @@ def _session_end_pump(ready: threading.Event) -> None:
     kernel32.GetModuleHandleW.argtypes = [w.LPCWSTR]
 
     def wndproc(hwnd, msg, wparam, lparam):
-        if msg == WM_QUERYENDSESSION:
-            kind = "logoff" if lparam & ENDSESSION_LOGOFF else "shutdown"
-            if lparam & ENDSESSION_CRITICAL:
+        if msg == _WM_QUERYENDSESSION:
+            kind = "logoff" if lparam & _ENDSESSION_LOGOFF else "shutdown"
+            if lparam & _ENDSESSION_CRITICAL:
                 kind += ", critical"
             # Windows wants an immediate answer here, so just wake the loop.
             # Cleanup overlaps the rest of the session-end handshake, which
@@ -232,16 +232,16 @@ def _session_end_pump(ready: threading.Event) -> None:
             # mid-write, and the script can simply be restarted.
             request_stop(f"WM_QUERYENDSESSION ({kind})")
             return 1  # TRUE: we consent to the session ending
-        if msg == WM_ENDSESSION:
+        if msg == _WM_ENDSESSION:
             if wparam:  # the session really is ending
                 # The system waits for us to return from this message,
                 # subject to HungAppTimeout (~5 s).
-                windows_cleanup_wait()
+                _windows_cleanup_wait()
             return 0
-        if msg == WM_CLOSE:
+        if msg == _WM_CLOSE:
             user32.DestroyWindow(hwnd)
             return 0
-        if msg == WM_DESTROY:
+        if msg == _WM_DESTROY:
             user32.PostQuitMessage(0)
             return 0
         return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -251,17 +251,17 @@ def _session_end_pump(ready: threading.Event) -> None:
     wc = WNDCLASSW()
     wc.lpfnWndProc = WNDPROC(wndproc)
     wc.hInstance = kernel32.GetModuleHandleW(None)
-    wc.lpszClassName = WINDOW_CLASS
+    wc.lpszClassName = _WINDOW_CLASS
 
     if not user32.RegisterClassW(ctypes.byref(wc)):
         err = ctypes.get_last_error()
-        if err != ERROR_CLASS_ALREADY_EXISTS:
+        if err != _ERROR_CLASS_ALREADY_EXISTS:
             ready.set()
             raise ctypes.WinError(err)
 
     hwnd = user32.CreateWindowExW(
         0,
-        WINDOW_CLASS,
+        _WINDOW_CLASS,
         "graceful-shutdown",
         0,
         0,
