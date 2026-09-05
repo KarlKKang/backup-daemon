@@ -42,11 +42,11 @@ def set_runtime_state(type: str, value: str) -> None:
         f.write(value)
 
 
-def run_backup() -> None:
+def run_backup() -> bool:
     last_backup = get_runtime_state("backup")
     current_hour = datetime.now().strftime("%Y-%m-%d-%H")
     if current_hour == last_backup:
-        return
+        return False
 
     last_force_run = get_runtime_state("force_run")
     current_month = datetime.now().strftime("%Y-%m")
@@ -134,9 +134,7 @@ def run_backup() -> None:
             " (forced run)" if force_run else ""
         )
     )
-
-    signal.stop_checkpoint()
-    run_forget()
+    return True
 
 
 def run_forget() -> None:
@@ -162,11 +160,11 @@ def run_forget() -> None:
     )
 
 
-def run_check() -> None:
+def run_check() -> bool:
     last_checked = get_runtime_state("check")
     current_week = datetime.now().strftime("%G-%V")
     if current_week == last_checked:
-        return
+        return False
 
     check_subset = get_runtime_state("check_subset")
     check_subset = check_subset.split(" ")
@@ -188,6 +186,7 @@ def run_check() -> None:
     set_runtime_state("check_subset", f"{(numerator + 1) % denominator} {denominator}")
 
     log(f"Restic check completed without errors ({data_subset}).")
+    return True
 
 
 def lock_process(lock_file_path: str) -> None:
@@ -239,7 +238,9 @@ def main() -> None:
             # The first run will happen after 1 minute to allow the system to set up properly after boot.
             signal.stop.wait(timeout=60)
             signal.stop_checkpoint()
-            run_backup()
+            if run_backup():
+                signal.stop_checkpoint()
+                run_forget()
             signal.stop_checkpoint()
             run_check()
     except signal.StopRequested:
