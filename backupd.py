@@ -240,11 +240,11 @@ def main() -> None:
 
     os.makedirs(RUNTIME_DIR, exist_ok=True)
     lock_file_path = os.path.join(RUNTIME_DIR, "lock")
+    lock_process(lock_file_path)
+    log("Backup daemon started.")
 
-    try:
-        lock_process(lock_file_path)
-        log("Backup daemon started.")
-        while True:
+    while True:
+        try:
             # The first run will happen after 1 minute to allow the system to set up properly after boot.
             signal.stop.wait(timeout=60)
             signal.stop_checkpoint()
@@ -253,22 +253,22 @@ def main() -> None:
                 run_forget()
             signal.stop_checkpoint()
             run_check()
-    except signal.StopRequested:
-        pass
-    except:
-        log(traceback.format_exc(), sys.stderr)
-    finally:
-        try:
-            os.remove(lock_file_path)
+        except signal.StopRequested:
+            break
         except:
-            pass
-        subprocess.uninterruptible_wait()
-        log(f"Backup daemon exiting. {signal.stop_reason} received.")
-        signal.cleanup_done.set()
+            log(traceback.format_exc(), sys.stderr)
 
-        # Let a blocked WM_ENDSESSION / console handler observe the flag
-        # before the interpreter tears down and freezes daemon threads.
-        time.sleep(0.05)
+    try:
+        os.remove(lock_file_path)
+    except:
+        pass
+    subprocess.uninterruptible_wait()
+    log(f"Backup daemon exiting. {signal.stop_reason} received.")
+    signal.cleanup_done.set()
+
+    # Let a blocked WM_ENDSESSION / console handler observe the flag
+    # before the interpreter tears down and freezes daemon threads.
+    time.sleep(0.05)
 
 
 if __name__ == "__main__":
