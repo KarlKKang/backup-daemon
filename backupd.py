@@ -727,6 +727,9 @@ def lock_process(lock_file_path):
 
 
 def main():
+    for f in (sys.stdout, sys.stderr):
+        f.reconfigure(encoding="utf-8", errors="replace")
+
     install_signal_handlers()
     install_windows_console_handler()
     install_windows_session_end_handler()
