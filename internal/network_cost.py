@@ -5,16 +5,8 @@ from dataclasses import dataclass
 from typing import List, Optional
 import traceback
 import time
-
-if __name__ == "__main__":
-    # for debugging purposes
-    log = print
-    IS_WINDOWS = sys.platform == "win32"
-    IS_DARWIN = sys.platform == "darwin"
-else:
-    from .log import log
-    from .platform import IS_WINDOWS, IS_DARWIN
-
+from .log import log
+from .platform import IS_WINDOWS, IS_DARWIN
 
 __all__ = ["NetworkCost", "get_network_cost", "should_limit_network_usage"]
 
@@ -387,11 +379,3 @@ def should_limit_network_usage(default: bool = False) -> bool:
     state can't be determined."""
     info = get_network_cost()
     return default if info is None else info.should_limit
-
-
-if __name__ == "__main__":
-    cost = get_network_cost()
-    if cost is None:
-        print("Network cost unknown (offline, or API unavailable).")
-    else:
-        print(cost)
