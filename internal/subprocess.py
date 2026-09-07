@@ -5,6 +5,7 @@ import os
 from .log import log
 from .platform import IS_WINDOWS
 from . import signal
+from .network_cost import should_limit_network_usage, get_network_cost
 
 __all__ = [
     "run_command",
@@ -16,7 +17,10 @@ _subprocess_io_threads = []
 
 
 def run_command(
-    command: list[str], stdout: list[str] = None, stderr: list[str] = None
+    command: list[str],
+    stdout: list[str] = None,
+    stderr: list[str] = None,
+    network_heavy: bool = False,
 ) -> None:
     kwargs = {}
     if IS_WINDOWS:
@@ -75,11 +79,22 @@ def run_command(
     for t in _subprocess_io_threads:
         t.start()
 
+    network_limiting = False  # To prevent repeatedly sending termination signals
     while (rc := _running_subprocess.poll()) is None:
         if signal.stop.is_set():
             # this will send a second termination signal for broadcasted signals (mostly relevant on Windows)
             _killpg(_running_subprocess)
             raise signal.StopRequested()
+        if network_heavy and not network_limiting and should_limit_network_usage():
+            log("Killing network-heavy subprocess due to switching to network-limiting mode. Current network cost:", sys.stderr)
+            log(get_network_cost(), sys.stderr)
+            network_limiting = True
+            # Been thinking about suspending the process instead of killing it, but networking is not very amenable to
+            # long suspensions. Moreover, suspension could cause the lock of the remote repository to be held for an extended period,
+            # which could prevent other clients from accessing it.
+            _killpg(_running_subprocess)
+            # We should not raise an exception here because we want cleanup to proceed normally here, in comparison to
+            # the stop request, where the cleanup is handled by the script cleanup routine.
         signal.stop.wait(0.1)
     _running_subprocess = None
     for t in _subprocess_io_threads:

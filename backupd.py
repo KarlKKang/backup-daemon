@@ -12,6 +12,7 @@ from internal.platform import IS_WINDOWS, IS_DARWIN
 from internal import signal
 from internal import subprocess
 from internal import apfs
+from internal.network_cost import should_limit_network_usage, get_network_cost
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 RUNTIME_DIR = os.path.join(SCRIPT_DIR, "runtime")
@@ -51,6 +52,9 @@ def set_runtime_state(type: RuntimeState, value: str) -> None:
 
 
 def run_backup() -> bool:
+    if should_limit_network_usage():
+        return False
+
     last_backup = get_runtime_state(RuntimeState.BACKUP)
     current_hour = datetime.now().strftime("%Y-%m-%d-%H")
     if current_hour == last_backup:
@@ -120,7 +124,7 @@ def run_backup() -> bool:
                 file_list=tmp_file_list.name,
                 exclude_list=tmp_exclude_list.name,
             )
-            subprocess.run_command(args)
+            subprocess.run_command(args, network_heavy=True)
 
     if IS_DARWIN:
         snapshot_date = apfs.snapshot()
@@ -169,6 +173,9 @@ def run_forget() -> None:
 
 
 def run_check() -> bool:
+    if should_limit_network_usage():
+        return False
+
     last_checked = get_runtime_state(RuntimeState.CHECK)
     current_week = datetime.now().strftime("%G-%V")
     if current_week == last_checked:
@@ -187,7 +194,8 @@ def run_check() -> bool:
             "-q",
             "--read-data-subset",
             data_subset,
-        ]
+        ],
+        network_heavy=True,
     )
 
     set_runtime_state(RuntimeState.CHECK, current_week)
@@ -243,11 +251,31 @@ def main() -> None:
     lock_process(lock_file_path)
     log("Backup daemon started.")
 
+    network_limiting = False
+
     while True:
         try:
             # The first run will happen after 1 minute to allow the system to set up properly after boot.
             signal.stop.wait(timeout=60)
             signal.stop_checkpoint()
+
+            if should_limit_network_usage():
+                if not network_limiting:
+                    network_limiting = True
+                    log(
+                        "Pausing backup due to switching to network-limiting mode. Current network cost: ",
+                        sys.stderr,
+                    )
+                    log(get_network_cost(), sys.stderr)
+                continue
+            else:
+                if network_limiting:
+                    network_limiting = False
+                    log(
+                        "Resuming backup as network-limiting mode is no longer active.",
+                        sys.stderr,
+                    )
+
             if run_backup():
                 signal.stop_checkpoint()
                 run_forget()

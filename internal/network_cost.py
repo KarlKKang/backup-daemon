@@ -15,6 +15,9 @@ else:
     from .platform import IS_WINDOWS, IS_DARWIN
 
 
+__all__ = ["NetworkCost", "get_network_cost", "should_limit_network_usage"]
+
+
 @dataclass(frozen=True)
 class NetworkCost:
     """Cost of the connection currently carrying internet traffic.
