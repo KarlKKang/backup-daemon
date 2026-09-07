@@ -108,7 +108,9 @@ def install_windows_console_handler() -> None:
     if not IS_WINDOWS:
         return
 
-    HandlerRoutine = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
+    from ctypes import wintypes
+
+    HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
 
     def handler(event: int) -> int:
         if event in (0, 1):
@@ -168,7 +170,7 @@ def install_windows_session_end_handler(timeout: float = 5.0):
 
 
 def _session_end_pump(ready: threading.Event) -> None:
-    import ctypes.wintypes as w  # importable on Windows only
+    import ctypes.wintypes as w
 
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -211,7 +213,7 @@ def _session_end_pump(ready: threading.Event) -> None:
         w.LPVOID,
     ]
     user32.GetMessageW.argtypes = [
-        ctypes.POINTER(w.MSG),
+        w.LPMSG,
         w.HWND,
         ctypes.c_uint,
         ctypes.c_uint,
