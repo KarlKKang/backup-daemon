@@ -110,9 +110,11 @@ def _killpg(p: subprocess.Popen) -> None:
             # Works because the child was created with CREATE_NEW_PROCESS_GROUP
             # (pid == process group id) and still shares our console.
             # CTRL_C_EVENT would silently no-op against a specific group.
-            os.kill(p.pid, signal.CTRL_BREAK_EVENT)
+            from signal import CTRL_BREAK_EVENT
+            os.kill(p.pid, CTRL_BREAK_EVENT)
         else:
-            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+            from signal import SIGTERM
+            os.killpg(os.getpgid(p.pid), SIGTERM)
     except OSError:
         pass
 
