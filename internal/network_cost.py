@@ -4,6 +4,7 @@ import threading
 from dataclasses import dataclass
 from typing import List, Optional
 import traceback
+import time
 
 if __name__ == "__main__":
     # for debugging purposes
@@ -32,7 +33,6 @@ class NetworkCost:
     over_data_limit: Optional[bool]
     approaching_data_limit: Optional[bool]
     congested: Optional[bool]
-    background_restricted: Optional[bool]
 
     @property
     def should_limit(self) -> bool:
@@ -46,7 +46,6 @@ class NetworkCost:
                 self.over_data_limit,
                 self.approaching_data_limit,
                 self.congested,
-                self.background_restricted,
             )
         )
 
@@ -59,9 +58,141 @@ class NetworkCost:
             f"over data limit       : {self.over_data_limit}\n"
             f"approaching data limit: {self.approaching_data_limit}\n"
             f"congested             : {self.congested}\n"
-            f"background restricted : {self.background_restricted}\n"
             f"should limit          : {self.should_limit}"
         )
+
+
+# ==========================================================================
+# Windows -- INetworkCostManager COM
+# ==========================================================================
+
+_NLM_UNRESTRICTED = 0x1
+_NLM_FIXED = 0x2
+_NLM_VARIABLE = 0x4
+_NLM_OVERDATALIMIT = 0x10000
+_NLM_CONGESTED = 0x20000
+_NLM_ROAMING = 0x40000
+_NLM_APPROACHINGDATALIMIT = 0x80000
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [
+        ("Data1", ctypes.c_uint32),
+        ("Data2", ctypes.c_uint16),
+        ("Data3", ctypes.c_uint16),
+        ("Data4", ctypes.c_ubyte * 8),
+    ]
+
+
+_CLSID_NetworkListManager = "{DCB00C01-570F-4A9B-8D69-199FDBA5723B}"
+_IID_INetworkCostManager = "{DCB00008-570F-4A9B-8D69-199FDBA5723B}"
+
+_CLSCTX_ALL = 0x17
+_COINIT_APARTMENTTHREADED = 0x2
+_S_OK = 0
+_S_FALSE = 1
+_RPC_E_CHANGED_MODE = 0x80010106  # -2147417850
+
+
+def _win_query_com() -> Optional[NetworkCost]:
+    from ctypes import wintypes
+
+    ole32 = ctypes.WinDLL("ole32")
+    ole32.CLSIDFromString.argtypes = [wintypes.LPCOLESTR, ctypes.POINTER(_GUID)]
+    ole32.CLSIDFromString.restype = wintypes.HRESULT
+    ole32.CoCreateInstance.argtypes = [
+        ctypes.POINTER(_GUID),
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(_GUID),
+        ctypes.POINTER(wintypes.LPVOID),
+    ]
+    ole32.CoCreateInstance.restype = wintypes.HRESULT
+    ole32.CoInitializeEx.argtypes = [wintypes.LPVOID, wintypes.DWORD]
+    ole32.CoInitializeEx.restype = wintypes.HRESULT
+
+    clsid, iid = _GUID(), _GUID()
+    if (
+        hr := ole32.CLSIDFromString(_CLSID_NetworkListManager, ctypes.byref(clsid))
+    ) != _S_OK:
+        log(f"CLSIDFromString failed for NetworkListManager: {hr}", sys.stderr)
+        return None
+    if (
+        hr := ole32.CLSIDFromString(_IID_INetworkCostManager, ctypes.byref(iid))
+    ) != _S_OK:
+        log(f"CLSIDFromString failed for INetworkCostManager: {hr}", sys.stderr)
+        return None
+
+    hr = ole32.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
+    if hr not in (_S_OK, _S_FALSE) and (hr & 0xFFFFFFFF) != _RPC_E_CHANGED_MODE:
+        log(f"CoInitializeEx failed: {hr}", sys.stderr)
+        return None
+    must_uninitialize = hr in (_S_OK, _S_FALSE)
+
+    ptr = ctypes.c_void_p()
+    try:
+        hr = ole32.CoCreateInstance(
+            ctypes.byref(clsid), None, _CLSCTX_ALL, ctypes.byref(iid), ctypes.byref(ptr)
+        )
+        if hr != _S_OK or not ptr:
+            log(f"CoCreateInstance failed: {hr}", sys.stderr)
+            return None
+
+        # vtable: 0 QueryInterface, 1 AddRef, 2 Release, 3 GetCost
+        vtbl = ctypes.cast(
+            ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))
+        ).contents
+        get_cost = ctypes.WINFUNCTYPE(
+            wintypes.HRESULT,
+            ctypes.c_void_p,
+            ctypes.POINTER(wintypes.DWORD),
+            ctypes.c_void_p,
+        )(vtbl[3])
+        release = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)(vtbl[2])
+
+        flags = wintypes.DWORD(0)
+        try:
+            # NULL destination address => cost of the default route
+            hr = get_cost(ptr, ctypes.byref(flags), None)
+        finally:
+            release(ptr)
+
+        if hr != _S_OK:
+            log(f"GetCost failed: {hr}", sys.stderr)
+            return None
+
+        value = flags.value
+        metered = bool(value & (_NLM_FIXED | _NLM_VARIABLE))
+        return NetworkCost(
+            metered=metered,
+            expensive=metered,
+            cellular=None,  # not reported by this interface
+            roaming=bool(value & _NLM_ROAMING),
+            over_data_limit=bool(value & _NLM_OVERDATALIMIT),
+            approaching_data_limit=bool(value & _NLM_APPROACHINGDATALIMIT),
+            congested=bool(value & _NLM_CONGESTED),
+        )
+    finally:
+        if must_uninitialize:
+            ole32.CoUninitialize()
+
+
+_win_last_queried: float = None
+_win_cached_result: NetworkCost = None
+
+
+def _win_query() -> Optional[NetworkCost]:
+    global _win_last_queried
+    global _win_cached_result
+    if (
+        _win_cached_result is not None
+        and _win_last_queried is not None
+        and (time.monotonic() - _win_last_queried) < 1
+    ):
+        return _win_cached_result
+    _win_cached_result = _win_query_com()
+    _win_last_queried = time.monotonic()
+    return _win_cached_result
 
 
 # ==========================================================================
@@ -120,7 +251,6 @@ def _mac_state_to_cost(state: dict) -> NetworkCost:
         over_data_limit=None,
         approaching_data_limit=None,
         congested=None,
-        background_restricted=None,
     )
 
 
@@ -245,7 +375,7 @@ def get_network_cost(timeout: float = 1.0) -> Optional[NetworkCost]:
     asynchronously; later calls return the cached value immediately.
     """
     if IS_WINDOWS:
-        return None
+        return _win_query()
     if IS_DARWIN:
         return _mac_query(timeout)
     return None
