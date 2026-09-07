@@ -1,4 +1,4 @@
-from typing import IO, Iterable
+from typing import IO, Iterable, Optional
 import os
 import time
 import traceback
@@ -98,7 +98,7 @@ def run_backup() -> bool:
             args.append("--force")
         return args
 
-    def run_restic_command(snapshot_dir: str = None) -> None:
+    def run_restic_command(snapshot_dir: Optional[str] = None) -> None:
         with (
             tempfile.NamedTemporaryFile(
                 "w", encoding="utf-8", delete=True, delete_on_close=False
@@ -110,7 +110,7 @@ def run_backup() -> bool:
             copy_file_list(FILE_LIST, tmp_file_list, prefix=snapshot_dir or "")
             copy_file_list(EXCLUDE_LIST, tmp_exclude_list, prefix=snapshot_dir or "")
             if IS_DARWIN:
-                timemachine_exclude = []
+                timemachine_exclude: list[str] = []
                 subprocess.run_command(
                     ["mdfind", "com_apple_backup_excludeItem = 'com.apple.backupd'"],
                     stdout=timemachine_exclude,
@@ -181,8 +181,7 @@ def run_check() -> bool:
     if current_week == last_checked:
         return False
 
-    check_subset = get_runtime_state(RuntimeState.CHECK_SUBSET)
-    check_subset = check_subset.split(" ")
+    check_subset = get_runtime_state(RuntimeState.CHECK_SUBSET).split(" ")
     numerator = int(get_list_item(check_subset, 0) or 0)
     denominator = int(get_list_item(check_subset, 1) or 4)
 

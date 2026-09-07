@@ -1,14 +1,15 @@
 import time
 import sys
 import threading
+from typing import Optional, TextIO
 
 __all__ = ["log"]
 
 
-_file_locks = {}
+_file_locks: dict[TextIO, threading.Lock] = {}
 
 
-def log(message, file=None) -> None:
+def log(message, file: Optional[TextIO] = None) -> None:
     """WARNING: This function should NOT be called in the signal handler (registered by `signal.signal`)."""
     file = file or sys.stdout
     lock = _file_locks.get(file)

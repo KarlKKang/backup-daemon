@@ -1,5 +1,6 @@
 import subprocess
 import threading
+from typing import Optional
 import sys
 import os
 from .log import log
@@ -12,14 +13,14 @@ __all__ = [
     "uninterruptible_wait",
 ]
 
-_running_subprocess = None
-_subprocess_io_threads = []
+_running_subprocess: subprocess.Popen | None = None
+_subprocess_io_threads: list[threading.Thread] = []
 
 
 def run_command(
     command: list[str],
-    stdout: list[str] = None,
-    stderr: list[str] = None,
+    stdout: Optional[list[str]] = None,
+    stderr: Optional[list[str]] = None,
     network_heavy: bool = False,
 ) -> None:
     kwargs = {}

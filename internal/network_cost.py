@@ -41,7 +41,7 @@ class NetworkCost:
             )
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (
             f"metered / low data    : {self.metered}\n"
             f"expensive             : {self.expensive}\n"
@@ -169,8 +169,8 @@ def _win_query_com() -> Optional[NetworkCost]:
             ole32.CoUninitialize()
 
 
-_win_last_queried: float = None
-_win_cached_result: NetworkCost = None
+_win_last_queried: float | None = None
+_win_cached_result: NetworkCost | None = None
 
 
 def _win_query() -> Optional[NetworkCost]:

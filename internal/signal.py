@@ -154,7 +154,7 @@ _ERROR_CLASS_ALREADY_EXISTS = 1410
 _WINDOW_CLASS = "GracefulShutdownSessionEndSink"
 
 
-def install_windows_session_end_handler(timeout: float = 5.0):
+def install_windows_session_end_handler(timeout: float = 5.0) -> None:
     """Start the hidden-window message pump. Returns True once it is live."""
     if not IS_WINDOWS:
         return

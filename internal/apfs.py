@@ -3,7 +3,7 @@ import os
 
 
 def snapshot() -> str:
-    stdout = []
+    stdout: list[str] = []
     subprocess.run_command(["tmutil", "localsnapshot"], stdout=stdout)
     prefix = "Created local snapshot with date: "
     for line in stdout:
