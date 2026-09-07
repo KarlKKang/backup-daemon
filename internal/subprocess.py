@@ -52,14 +52,11 @@ def run_command(
         **kwargs,
     )
 
-    print_lock = threading.Lock()
-
     def print_output(pipe, file, output_list):
         try:
             for line in iter(pipe.readline, ""):
                 if output_list is None:
-                    with print_lock:
-                        log(line, file=file)
+                    log(line, file=file)
                 else:
                     output_list.append(line)
         finally:
@@ -86,7 +83,10 @@ def run_command(
             _killpg(_running_subprocess)
             raise signal.StopRequested()
         if network_heavy and not network_limiting and should_limit_network_usage():
-            log("Killing network-heavy subprocess due to switching to network-limiting mode. Current network cost:", sys.stderr)
+            log(
+                "Killing network-heavy subprocess due to switching to network-limiting mode. Current network cost:",
+                sys.stderr,
+            )
             log(get_network_cost(), sys.stderr)
             network_limiting = True
             # Been thinking about suspending the process instead of killing it, but networking is not very amenable to
