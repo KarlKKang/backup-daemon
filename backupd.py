@@ -190,13 +190,13 @@ def run_check() -> bool:
         return False
 
     last_checked = get_runtime_state(RuntimeState.CHECK)
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    if current_date == last_checked:
+    current_week = datetime.now().strftime("%G-%V")
+    if current_week == last_checked:
         return False
 
     check_subset = get_runtime_state(RuntimeState.CHECK_SUBSET).split(" ")
     numerator = int(get_list_item(check_subset, 0) or 0)
-    denominator = int(get_list_item(check_subset, 1) or 30)
+    denominator = int(get_list_item(check_subset, 1) or 4)
 
     data_subset = f"{numerator % denominator + 1}/{denominator}"
     subprocess.run_command(
@@ -210,7 +210,7 @@ def run_check() -> bool:
         network_heavy=True,
     )
 
-    set_runtime_state(RuntimeState.CHECK, current_date)
+    set_runtime_state(RuntimeState.CHECK, current_week)
     set_runtime_state(
         RuntimeState.CHECK_SUBSET, f"{(numerator + 1) % denominator} {denominator}"
     )
