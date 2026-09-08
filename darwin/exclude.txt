@@ -27,3 +27,6 @@
 /Users/*/Documents
 # If the photo library is stored in iCloud:
 /Users/*/Pictures/Photos Library.photoslibrary
+
+# UTM virtual machines
+/Users/*/Library/Containers/com.utmapp.UTM/Data/Documents
