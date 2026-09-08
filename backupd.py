@@ -177,13 +177,13 @@ def run_check() -> bool:
         return False
 
     last_checked = get_runtime_state(RuntimeState.CHECK)
-    current_week = datetime.now().strftime("%G-%V")
+    current_week = datetime.now().strftime("%Y-%m-%d")
     if current_week == last_checked:
         return False
 
     check_subset = get_runtime_state(RuntimeState.CHECK_SUBSET).split(" ")
     numerator = int(get_list_item(check_subset, 0) or 0)
-    denominator = int(get_list_item(check_subset, 1) or 4)
+    denominator = int(get_list_item(check_subset, 1) or 30)
 
     data_subset = f"{numerator % denominator + 1}/{denominator}"
     subprocess.run_command(
