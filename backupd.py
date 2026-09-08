@@ -33,6 +33,7 @@ def get_list_item[T](lst: list[T], idx: int) -> T | None:
 class RuntimeState(Enum):
     BACKUP = "backup"
     FORCE_RUN = "force_run"
+    FORGET = "forget"
     CHECK = "check"
     CHECK_SUBSET = "check_subset"
 
@@ -149,7 +150,15 @@ def run_backup() -> bool:
     return True
 
 
-def run_forget() -> None:
+def run_forget() -> bool:
+    if should_limit_network_usage():
+        return False
+
+    last_forget = get_runtime_state(RuntimeState.FORGET)
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    if current_date == last_forget:
+        return False
+
     subprocess.run_command(
         [
             RESTIC_EXEC,
@@ -168,8 +177,12 @@ def run_forget() -> None:
             "--keep-within-yearly",
             "3y",
             "--prune",
-        ]
+        ],
+        network_heavy=True,
     )
+
+    set_runtime_state(RuntimeState.FORGET, current_date)
+    return True
 
 
 def run_check() -> bool:
@@ -177,8 +190,8 @@ def run_check() -> bool:
         return False
 
     last_checked = get_runtime_state(RuntimeState.CHECK)
-    current_week = datetime.now().strftime("%Y-%m-%d")
-    if current_week == last_checked:
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    if current_date == last_checked:
         return False
 
     check_subset = get_runtime_state(RuntimeState.CHECK_SUBSET).split(" ")
@@ -197,7 +210,7 @@ def run_check() -> bool:
         network_heavy=True,
     )
 
-    set_runtime_state(RuntimeState.CHECK, current_week)
+    set_runtime_state(RuntimeState.CHECK, current_date)
     set_runtime_state(
         RuntimeState.CHECK_SUBSET, f"{(numerator + 1) % denominator} {denominator}"
     )
