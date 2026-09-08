@@ -11,6 +11,7 @@ export RESTIC_HOST=
 export RESTIC_EXEC=
 
 export GOMAXPROCS=2
+export RESTIC_FEATURES="device-id-for-hardlinks=true"
 
 cd "$(dirname "$0")"
 source ./.venv/bin/activate
