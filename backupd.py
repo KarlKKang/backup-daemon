@@ -211,8 +211,14 @@ def lock_process(lock_file_path: str) -> None:
         with open(lock_file_path, "x") as lock_file:
             lock_file.write(str(os.getpid()))
     except FileExistsError:
-        with open(lock_file_path, "r") as lock_file:
-            running_pid = lock_file.read().strip()
+        time.sleep(5)
+        try:
+            with open(lock_file_path, "r") as lock_file:
+                running_pid = lock_file.read().strip()
+        except FileNotFoundError:
+            # The lock file was removed in the meantime, retry locking
+            lock_process(lock_file_path)
+            return
         try:
             running = is_process_running(int(running_pid))
         except ValueError:
