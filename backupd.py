@@ -30,6 +30,20 @@ def get_list_item[T](lst: list[T], idx: int) -> T | None:
         return None
 
 
+last_long_task_run: str | None = None
+
+
+def update_last_long_task_run() -> None:
+    global last_long_task_run
+    last_long_task_run = datetime.now().strftime("%Y-%m-%d")
+
+
+def allow_long_task() -> bool:
+    if last_long_task_run is None:
+        return True
+    return last_long_task_run != datetime.now().strftime("%Y-%m-%d")
+
+
 class RuntimeState(Enum):
     BACKUP = "backup"
     FORCE_RUN = "force_run"
@@ -63,7 +77,7 @@ def run_backup() -> bool:
 
     last_force_run = get_runtime_state(RuntimeState.FORCE_RUN)
     current_month = datetime.now().strftime("%Y-%m")
-    force_run = current_month != last_force_run
+    force_run = current_month != last_force_run and allow_long_task()
 
     def write_file_list(
         src_list: Iterable[str], dest_file: IO, prefix: str = ""
@@ -97,6 +111,7 @@ def run_backup() -> bool:
         args.append(exclude_list)
         if force_run:
             args.append("--force")
+            update_last_long_task_run()
         return args
 
     def run_restic_command(snapshot_dir: Optional[str] = None) -> None:
@@ -189,6 +204,9 @@ def run_check() -> bool:
     if should_limit_network_usage():
         return False
 
+    if not allow_long_task():
+        return False
+
     last_checked = get_runtime_state(RuntimeState.CHECK)
     current_week = datetime.now().strftime("%G-%V")
     if current_week == last_checked:
@@ -197,6 +215,7 @@ def run_check() -> bool:
     check_subset = get_runtime_state(RuntimeState.CHECK_SUBSET).split(" ")
     numerator = int(get_list_item(check_subset, 0) or 0)
     denominator = int(get_list_item(check_subset, 1) or 4)
+    update_last_long_task_run()
 
     data_subset = f"{numerator % denominator + 1}/{denominator}"
     subprocess.run_command(
