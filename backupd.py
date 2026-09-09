@@ -2,7 +2,7 @@ from typing import IO, Iterable, Optional
 import os
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 import sys
 import tempfile
 from enum import Enum
@@ -19,7 +19,7 @@ RUNTIME_DIR = os.path.join(SCRIPT_DIR, "runtime")
 EXCLUDE_LIST = os.path.join(SCRIPT_DIR, "exclude.txt")
 FILE_LIST = os.path.join(SCRIPT_DIR, "files.txt")
 RESTIC_EXEC = os.environ.get("RESTIC_EXEC", None) or "restic"
-
+DAILY_TASK_HOUR = 3  # The hour on clock (24-hour format) after which daily and less frequent tasks (force run, forget, and check) will start
 DARWIN_SNAPSHOT_MOUNTPOINT = "/tmp/backupd_snapshot"
 
 
@@ -30,18 +30,22 @@ def get_list_item[T](lst: list[T], idx: int) -> T | None:
         return None
 
 
+def daily_task_datetime() -> datetime:
+    return datetime.now() - timedelta(hours=DAILY_TASK_HOUR)
+
+
 last_long_task_run: str | None = None
 
 
 def update_last_long_task_run() -> None:
     global last_long_task_run
-    last_long_task_run = datetime.now().strftime("%Y-%m-%d")
+    last_long_task_run = daily_task_datetime().strftime("%Y-%m-%d")
 
 
 def allow_long_task() -> bool:
     if last_long_task_run is None:
         return True
-    return last_long_task_run != datetime.now().strftime("%Y-%m-%d")
+    return last_long_task_run != daily_task_datetime().strftime("%Y-%m-%d")
 
 
 class RuntimeState(Enum):
@@ -76,7 +80,7 @@ def run_backup() -> bool:
         return False
 
     last_force_run = get_runtime_state(RuntimeState.FORCE_RUN)
-    current_month = datetime.now().strftime("%Y-%m")
+    current_month = daily_task_datetime().strftime("%Y-%m")
     force_run = current_month != last_force_run and allow_long_task()
 
     def write_file_list(
@@ -170,7 +174,7 @@ def run_forget() -> bool:
         return False
 
     last_forget = get_runtime_state(RuntimeState.FORGET)
-    current_date = datetime.now().strftime("%Y-%m-%d")
+    current_date = daily_task_datetime().strftime("%Y-%m-%d")
     if current_date == last_forget:
         return False
 
@@ -208,7 +212,7 @@ def run_check() -> bool:
         return False
 
     last_checked = get_runtime_state(RuntimeState.CHECK)
-    current_week = datetime.now().strftime("%G-%V")
+    current_week = daily_task_datetime().strftime("%G-%V")
     if current_week == last_checked:
         return False
 
