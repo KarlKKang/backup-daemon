@@ -34,17 +34,14 @@ def daily_task_datetime() -> datetime:
     return datetime.now() - timedelta(hours=DAILY_TASK_HOUR)
 
 
-last_long_task_run: str | None = None
-
-
 def update_last_long_task_run() -> None:
-    global last_long_task_run
-    last_long_task_run = daily_task_datetime().strftime("%Y-%m-%d")
+    set_runtime_state(
+        RuntimeState.LONG_TASK, daily_task_datetime().strftime("%Y-%m-%d")
+    )
 
 
 def allow_long_task() -> bool:
-    if last_long_task_run is None:
-        return True
+    last_long_task_run = get_runtime_state(RuntimeState.LONG_TASK)
     return last_long_task_run != daily_task_datetime().strftime("%Y-%m-%d")
 
 
@@ -54,6 +51,7 @@ class RuntimeState(Enum):
     FORGET = "forget"
     CHECK = "check"
     CHECK_SUBSET = "check_subset"
+    LONG_TASK = "long_task"
 
 
 def get_runtime_state(type: RuntimeState) -> str:
